@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LogGuard — Dashboard</title><link rel="stylesheet" href="style.css"></head>
+<body><div class="wrap">
+<nav><a class="logo" href="/">🛡 Log<span>Guard</span></a>
+  <div class="row"><span class="muted" id="who"></span><button class="btn ghost small" id="logout">Log out</button></div></nav>
+
+<div class="card row between" style="margin-bottom:18px">
+  <div><b id="company">Your company</b><div class="muted" id="trial"></div></div>
+  <div class="row">
+    <div><div class="stat" id="nOpen">0</div><div class="muted">open threats</div></div>
+    <div><div class="stat" id="nCrit" style="color:var(--crit)">0</div><div class="muted">critical</div></div>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns:1fr 2fr;align-items:start">
+  <div class="stack">
+    <div class="card stack">
+      <h3 style="margin:0">Servers</h3>
+      <div id="agents" class="stack"><p class="muted">No servers connected yet.</p></div>
+      <form id="addAgent" class="row"><input id="agentName" placeholder="e.g. store-srv01" required style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0e1528;color:var(--text)"><button class="btn small">Add server</button></form>
+    </div>
+    <div class="card stack">
+      <h3 style="margin:0">Try it now</h3>
+      <p class="muted">No server at hand? Simulate an attack to see how LogGuard reports it.</p>
+      <button class="btn small" id="simulate">Simulate attack</button>
+    </div>
+  </div>
+  <div class="card stack">
+    <div class="row between"><h3 style="margin:0">Alerts</h3><span class="muted" style="font-size:13px">● live</span></div>
+    <div id="alerts" class="stack"><p class="muted">No alerts yet. All quiet — sleep well.</p></div>
+  </div>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(LOGGUARD_CONFIG.SUPABASE_URL, LOGGUARD_CONFIG.SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let user, agents = [];
+
+const SAMPLES = [
+  {severity:'CRITICAL', title:'Read access to /etc/shadow via sudo',
+   explanation:'User "staff" read the password hash file. This is typical for credential theft after a compromise.',
+   remediation:'sudo passwd -l staff && sudo last -a | head -20',
+   raw_log:'sudo: staff : TTY=pts/1 ; PWD=/home/staff ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow'},
+  {severity:'HIGH', title:'SSH brute-force attempt',
+   explanation:'Dozens of failed root logins from one external IP within a minute. An automated password-guessing attack is likely.',
+   remediation:'sudo ufw deny from 185.220.101.47 && sudo systemctl restart sshd',
+   raw_log:'sshd[4121]: Failed password for root from 185.220.101.47 port 51522 ssh2'},
+  {severity:'CRITICAL', title:'Sudoers file modified',
+   explanation:'The sudoers configuration was edited, which can grant permanent root access to an attacker.',
+   remediation:'sudo visudo -c && sudo cat /etc/sudoers.d/*',
+   raw_log:'sudo: www-data : USER=root ; COMMAND=/usr/bin/tee -a /etc/sudoers'}
+];
+
+async function init(){
+  const { data } = await sb.auth.getSession();
+  if (!data.session) return location.href = 'login.html';
+  user = data.session.user; $('who').textContent = user.email;
+  const { data: p } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  if (p) {
+    $('company').textContent = p.company || 'Your company';
+    const days = Math.ceil((new Date(p.trial_ends_at) - Date.now()) / 864e5);
+    $('trial').textContent = days > 0 ? `Free trial: ${days} day(s) left` : 'Trial ended — contact sales';
+  }
+  await loadAgents(); await loadAlerts();
+  sb.channel('alerts').on('postgres_changes', {event:'*', schema:'public', table:'alerts'}, loadAlerts).subscribe();
+}
+
+async function loadAgents(){
+  const { data } = await sb.from('agents').select('*').order('created_at');
+  agents = data || [];
+  if (!agents.length) { $('agents').innerHTML = '<p class="muted">No servers connected yet.</p>'; return; }
+  $('agents').innerHTML = agents.map(a => `
+    <div><b>${esc(a.name)}</b> <span class="muted" style="font-size:13px">${a.last_seen ? 'last seen ' + new Date(a.last_seen).toLocaleString() : 'waiting for agent…'}</span>
+    <details><summary class="muted" style="cursor:pointer">Install agent</summary>
+    <pre>export LOGGUARD_URL="${esc(LOGGUARD_CONFIG.SUPABASE_URL)}"
+export LOGGUARD_ANON_KEY="${esc(LOGGUARD_CONFIG.SUPABASE_ANON_KEY)}"
+export LOGGUARD_AGENT_KEY="${esc(a.agent_key)}"
+python3 logguard_agent.py</pre></details></div>`).join('');
+}
+
+async function loadAlerts(){
+  const { data } = await sb.from('alerts').select('*, agents(name)').order('created_at', {ascending:false}).limit(100);
+  const list = data || [];
+  const open = list.filter(a => a.status === 'open');
+  $('nOpen').textContent = open.length;
+  $('nCrit').textContent = open.filter(a => a.severity === 'CRITICAL').length;
+  if (!list.length) { $('alerts').innerHTML = '<p class="muted">No alerts yet. All quiet — sleep well.</p>'; return; }
+  $('alerts').innerHTML = list.map(a => `
+    <div class="card alert c-${a.severity} ${a.status==='resolved'?'resolved':''}">
+      <div class="row between"><div class="row"><span class="sev ${a.severity}">${a.severity}</span><b>${esc(a.title)}</b></div>
+      <span class="muted" style="font-size:13px">${esc(a.agents?.name || 'demo')} · ${new Date(a.created_at).toLocaleString()}</span></div>
+      <p><b>AI analysis:</b> ${esc(a.explanation)}</p>
+      <p><b>Fix:</b></p><pre>${esc(a.remediation)}</pre>
+      <details><summary class="muted" style="cursor:pointer">Raw log</summary><pre>${esc(a.raw_log)}</pre></details>
+      ${a.status==='open' ? `<button class="btn small" onclick="resolve(${a.id})">Mark resolved</button>` : '<span class="muted">✓ Resolved</span>'}
+    </div>`).join('');
+}
+
+async function resolve(id){ await sb.from('alerts').update({status:'resolved'}).eq('id', id); loadAlerts(); }
+
+$('addAgent').onsubmit = async e => {
+  e.preventDefault();
+  const { error } = await sb.from('agents').insert({ name: $('agentName').value.trim(), user_id: user.id });
+  if (error) return alert(error.message);
+  $('agentName').value = ''; loadAgents();
+};
+
+$('simulate').onclick = async () => {
+  const s = SAMPLES[Math.floor(Math.random() * SAMPLES.length)];
+  const { error } = await sb.from('alerts').insert({ ...s, user_id: user.id });
+  if (error) return alert(error.message);
+  loadAlerts();
+};
+
+$('logout').onclick = async () => { await sb.auth.signOut(); location.href = '/'; };
+init();
+</script></body></html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LogGuard — Sign in</title><link rel="stylesheet" href="style.css"></head>
+<body><div class="wrap">
+<nav><a class="logo" href="/">🛡 Log<span>Guard</span></a></nav>
+<div class="form card">
+  <h2 id="title">Log in</h2>
+  <form id="f">
+    <div id="companyBox" hidden><label>Company name</label><input id="company" placeholder="e.g. Astana Retail LLP"></div>
+    <label>Work email</label><input id="email" type="email" required>
+    <label>Password</label><input id="password" type="password" minlength="6" required>
+    <div class="err" id="err"></div>
+    <button class="btn" style="width:100%" id="submit">Log in</button>
+  </form>
+  <p class="muted" id="switch"></p>
+</div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(LOGGUARD_CONFIG.SUPABASE_URL, LOGGUARD_CONFIG.SUPABASE_ANON_KEY);
+let signup = new URLSearchParams(location.search).get('mode') === 'signup';
+const $ = id => document.getElementById(id);
+function render(){
+  $('title').textContent = signup ? 'Start your 7-day free trial' : 'Log in';
+  $('submit').textContent = signup ? 'Create account' : 'Log in';
+  $('companyBox').hidden = !signup;
+  $('switch').innerHTML = signup ? 'Already have an account? <a href="#" id="t">Log in</a>' : 'New to LogGuard? <a href="#" id="t">Start free trial</a>';
+  $('t').onclick = e => { e.preventDefault(); signup = !signup; $('err').textContent=''; render(); };
+}
+render();
+sb.auth.getSession().then(({data}) => { if (data.session) location.href = 'dashboard.html'; });
+$('f').onsubmit = async e => {
+  e.preventDefault(); $('err').textContent = ''; $('submit').disabled = true;
+  const email = $('email').value.trim(), password = $('password').value;
+  const res = signup
+    ? await sb.auth.signUp({ email, password, options: { data: { company: $('company').value.trim() } } })
+    : await sb.auth.signInWithPassword({ email, password });
+  $('submit').disabled = false;
+  if (res.error) { $('err').textContent = res.error.message; return; }
+  if (!res.data.session) { $('err').textContent = 'Check your email to confirm the account.'; return; }
+  location.href = 'dashboard.html';
+};
+</script></body></html>
