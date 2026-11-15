@@ -1,3 +1,7 @@
 .vercel
 .env
 __pycache__/
+agent/results.jsonl
+t.py
+.env
+__pycache__/
