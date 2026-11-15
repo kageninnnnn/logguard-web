@@ -61,7 +61,7 @@ SURVEY = [
 def http(url, data=None, headers=None, method=None, timeout=20):
     body = json.dumps(data).encode() if data is not None else None
     req = urllib.request.Request(url, data=body, method=method or ("POST" if body else "GET"),
-                                 headers={"Content-Type": "application/json", **(headers or {})})
+                                 headers={"Content-Type": "application/json", "User-Agent": "LogGuard/1.0", "Accept": "application/json", **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         raw = r.read()
         return json.loads(raw) if raw else None
@@ -104,7 +104,7 @@ def analyze(line):
                 headers={"Authorization": f"Bearer {GROQ_KEY}"}, timeout=25)
             return json.loads(r["choices"][0]["message"]["content"]), model
         except urllib.error.HTTPError as e:
-            last = f"{model}: HTTP {e.code}"
+            last = f"{model}: HTTP {e.code} {e.read()[:300]!r}"; print("groq error", last)
             if e.code in (400, 403, 404):   # model unavailable on this account -> try next
                 continue
             break
