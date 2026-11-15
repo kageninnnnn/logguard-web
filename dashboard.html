@@ -21,6 +21,11 @@
       <form id="addAgent" class="row"><input id="agentName" placeholder="e.g. store-srv01" required style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0e1528;color:var(--text)"><button class="btn small">Add server</button></form>
     </div>
     <div class="card stack">
+      <h3 style="margin:0">Telegram alerts</h3>
+      <p class="muted">Get alerts and test the AI on demo scenarios in our Telegram bot.</p>
+      <a class="btn small" href="https://t.me/logguardss_bot" target="_blank">Open @logguardss_bot</a>
+    </div>
+    <div class="card stack">
       <h3 style="margin:0">Try it now</h3>
       <p class="muted">No server at hand? Simulate an attack to see how LogGuard reports it.</p>
       <button class="btn small" id="simulate">Simulate attack</button>
@@ -66,7 +71,7 @@ async function init(){
     $('trial').textContent = days > 0 ? `Free trial: ${days} day(s) left` : 'Trial ended — contact sales';
   }
   await loadAgents(); await loadAlerts();
-  sb.channel('alerts').on('postgres_changes', {event:'*', schema:'public', table:'alerts'}, loadAlerts).subscribe();
+  sb.channel('alerts').on('postgres_changes', {event:'*', schema:'public', table:'alerts'}, () => { loadAlerts(); loadAgents(); }).subscribe();
 }
 
 async function loadAgents(){
@@ -79,7 +84,7 @@ async function loadAgents(){
     <pre>export LOGGUARD_URL="${esc(LOGGUARD_CONFIG.SUPABASE_URL)}"
 export LOGGUARD_ANON_KEY="${esc(LOGGUARD_CONFIG.SUPABASE_ANON_KEY)}"
 export LOGGUARD_AGENT_KEY="${esc(a.agent_key)}"
-python3 logguard_agent.py</pre></details></div>`).join('');
+python3 agent/logguard_agent.py</pre></details></div>`).join('');
 }
 
 async function loadAlerts(){

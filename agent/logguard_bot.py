@@ -244,6 +244,18 @@ def main():
                                   {"command": "scenarios", "description": "Demo scenarios"},
                                   {"command": "survey", "description": "Rate the bot"},
                                   {"command": "help", "description": "Help"}])
+    tg("setMyDescription", description=(
+        "🛡 LogGuard — an AI-assisted micro-SOC for small businesses (student MVP).\n\n"
+        "The bot acts as a Tier-1 analyst: it reviews Linux auth logs (sudo, su, sshd), decides whether it's a threat "
+        "or noise, shows the AI's confidence and suggests what to do. The final decision is always yours.\n\n"
+        "Tap Start, pick a demo scenario or send your own log line. Use test data only, never real logs."))
+    tg("setMyShortDescription", short_description="AI Tier-1 security analyst for SMBs. Sleep. We're on watch. logguard-web.vercel.app")
+    try:
+        tags = requests.get(OLLAMA_URL.replace("/api/generate", "/api/tags"), timeout=5).json()
+        names = [m["name"] for m in tags.get("models", [])]
+        print("[ok] Ollama is running." if MODEL_NAME in names else f"[!] Ollama is running but model {MODEL_NAME} is missing: ollama pull {MODEL_NAME}")
+    except Exception:
+        print("[!] Ollama is NOT running. Start it: sudo systemctl start ollama")
     print(f"LogGuard bot running (model {MODEL_NAME}). Ctrl+C to stop.")
     offset = 0
     while True:
